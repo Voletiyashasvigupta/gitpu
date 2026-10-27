@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    environment {
+        // ── Change these to match your setup ──────────────────────────────
+        IMAGE_NAME   = 'cicdproject'
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"          // e.g. 1, 2, 3 …
+        // If pushing to Docker Hub: 'youruser/cicdproject'
+        // If pushing to a private registry: 'registry.example.com/cicdproject'
+        REGISTRY     = 'youruser'                     // ← update this
+        FULL_IMAGE   = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        DOCKER_CREDS = 'dockerhub-credentials'       // Jenkins credential ID
+    }
+
+    tools {
+        maven 'Maven-3.9'   // must match the name in Jenkins > Global Tool Config
+        jdk   'JDK-17'      // must match the name in Jenkins > Global Tool Config
+    }
+
+    stages {
+
+        // ── 1. Checkout ──────────────────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        // ── 2. Build & Unit Test ─────────────────────────────────────────
+        stage('Build & Test') {
+            steps {
+                sh 'mvn clean verify -B'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        // ── 3. Build Docker Image ────────────────────────────────────────
+        stage('Docker Build') {
+            steps {
+                sh "docker build -t ${FULL_IMAGE} ."
+            }
+        }
+
+        // ── 4. Push to Registry ──────────────────────────────────────────
+        stage('Docker Push') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKER_CREDS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                        echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                        docker push ${FULL_IMAGE}
+                        docker logout
+                    """
+                }
+            }
+        }
+
+        // ── 5. Deploy (optional – adjust to your environment) ────────────
+        stage('Deploy') {
+            steps {
+                sh """
+                    docker stop ${IMAGE_NAME} || true
+                    docker rm   ${IMAGE_NAME} || true
+                    docker run -d --name ${IMAGE_NAME} -p 8080:8080 ${FULL_IMAGE}
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Pipeline succeeded — image: ${FULL_IMAGE}"
+        }
+        failure {
+            echo "❌ Pipeline failed — check the logs above."
+        }
+        always {
+            // Clean up dangling images to save disk space
+            sh 'docker image prune -f || true'
+        }
+    }
+}
+
