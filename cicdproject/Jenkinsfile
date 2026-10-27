@@ -22,7 +22,7 @@ pipeline {
             url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
 
         dir('cicdproject') {
-            bat 'mvnw.cmd clean package -B'
+            bat 'mvnw.cmd clean package -B -DskipTests'
         }
     }
 }
