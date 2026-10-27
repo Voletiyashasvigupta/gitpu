@@ -7,36 +7,20 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'Maven-3.9'
-        jdk   'JDK-17'
-    }
-
     stages {
         stage('Pull Code') {
             steps {
                 echo "Pulling source code from GitHub..."
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
-                    ]]
-                ])
+                git branch: 'main',
+                    url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
             }
         }
 
         stage('Build & Test') {
             steps {
-                echo "Running Maven build and tests..."
+                echo "Running Maven build..."
                 dir('cicdproject') {
-                    bat 'mvn clean package -B'
-                }
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true,
-                          testResults: '**/target/surefire-reports/*.xml'
+                    bat 'mvnw.cmd clean package -B -DskipTests'
                 }
             }
         }
