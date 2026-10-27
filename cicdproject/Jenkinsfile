@@ -17,30 +17,25 @@ pipeline {
 
         // ── STEP 1: Trigger the 'checkout' job ──────────────────────────
         stage('Checkout') {
-            steps {
-                echo "Triggering job: checkout..."
-                build job: 'checkout',      // must match Jenkins job name exactly
-                      wait: true,           // wait until it finishes before moving on
-                      propagate: true       // if checkout fails, this pipeline fails too
-            }
+    steps {
+        git branch: 'main',
+            url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
+
+        dir('cicdproject') {
+            bat 'mvnw.cmd clean package -B'
         }
+    }
+}
 
         // ── STEP 2: Trigger the 'imagecreate' job ───────────────────────
-        stage('ImageCreate') {
-            steps {
-                echo "Triggering job: imagecreate..."
-                script {
-                    def imageJob = build job: 'imagecreate',
-                                         wait: true,
-                                         propagate: true
-
-                    // Capture the build number from imagecreate job
-                    // so we pass the exact same image tag to deploy
-                    env.DEPLOY_TAG = imageJob.number.toString()
-                    echo "Image built with tag: ${env.DEPLOY_TAG}"
-                }
-            }
+  stage('Image Create') {
+    steps {
+        dir('cicdproject') {
+            bat 'docker build -t cicdproject:%BUILD_NUMBER% -t cicdproject:latest .'
+            bat 'docker images cicdproject'
         }
+    }
+}
 
         // ── STEP 3: Trigger the 'deploy' job (pass image tag) ───────────
         stage('Deploy') {

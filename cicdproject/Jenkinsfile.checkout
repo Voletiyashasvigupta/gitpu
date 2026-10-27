@@ -56,3 +56,4 @@ pipeline {
         failure { echo "CHECKOUT job FAILED" }
     }
 }
+
