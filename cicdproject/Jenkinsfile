@@ -1,15 +1,15 @@
 // ============================================================
 //  MASTER PIPELINE
 //  Orchestrates 3 separate Jenkins jobs in sequence:
-//    1. checkout      → pulls code, builds JAR, stashes workspace
-//    2. imagecreate   → builds Docker image, pushes to Docker Hub
-//    3. deploy        → deploys to Kubernetes
+//    1. checkout     → pulls code, builds JAR, stashes workspace
+//    2. imagecreate  → builds Docker image, pushes to Docker Hub
+//    3. deploy       → deploys to Kubernetes
 // ============================================================
 pipeline {
     agent any
 
     environment {
-        REGISTRY   = 'yashasvivoleti'     // <-- change to your Docker Hub username
+        REGISTRY   = 'yashasvivoleti'
         IMAGE_NAME = 'cicdproject'
     }
 
@@ -17,25 +17,28 @@ pipeline {
 
         // ── STEP 1: Trigger the 'checkout' job ──────────────────────────
         stage('Checkout') {
-    steps {
-        git branch: 'main',
-            url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
-
-        dir('cicdproject') {
-            bat 'mvnw.cmd clean package -B -DskipTests'
+            steps {
+                echo "Triggering job: checkout..."
+                build job: 'checkout',
+                      wait: true,
+                      propagate: true
+            }
         }
-    }
-}
 
         // ── STEP 2: Trigger the 'imagecreate' job ───────────────────────
-  stage('Image Create') {
-    steps {
-        dir('cicdproject') {
-            bat 'docker build -t cicdproject:%BUILD_NUMBER% -t cicdproject:latest .'
-            bat 'docker images cicdproject'
+        stage('Image Create') {
+            steps {
+                echo "Triggering job: imagecreate..."
+                script {
+                    def imageJob = build job: 'imagecreate',
+                                         wait: true,
+                                         propagate: true
+                    // Capture build number from imagecreate to pass as image tag
+                    env.DEPLOY_TAG = imageJob.number.toString()
+                    echo "Image built with tag: ${env.DEPLOY_TAG}"
+                }
+            }
         }
-    }
-}
 
         // ── STEP 3: Trigger the 'deploy' job (pass image tag) ───────────
         stage('Deploy') {

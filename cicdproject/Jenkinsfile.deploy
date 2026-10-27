@@ -17,7 +17,7 @@ pipeline {
     }
 
     environment {
-        REGISTRY      = 'youruser'              // <-- change to your Docker Hub username
+        REGISTRY      = 'yashasvivoleti'
         IMAGE_NAME    = 'cicdproject'
         KUBECONFIG_ID = 'kubeconfig-credentials' // Jenkins credential ID (secret file)
         FULL_IMAGE    = "${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
@@ -34,8 +34,9 @@ pipeline {
         stage('Update Image Tag in Manifest') {
             steps {
                 echo "Setting image to: ${FULL_IMAGE}"
-                sh """
-                    sed -i 's|image: ${REGISTRY}/${IMAGE_NAME}:.*|image: ${FULL_IMAGE}|g' k8s/deployment.yaml
+                // PowerShell to replace image tag in deployment.yaml (Windows-safe)
+                bat """
+                    powershell -Command "(Get-Content k8s\\deployment.yaml) -replace 'image: ${REGISTRY}/${IMAGE_NAME}:.*', 'image: ${FULL_IMAGE}' | Set-Content k8s\\deployment.yaml"
                 """
             }
         }
@@ -47,11 +48,11 @@ pipeline {
                     credentialsId: "${KUBECONFIG_ID}",
                     variable: 'KUBECONFIG'
                 )]) {
-                    sh """
-                        kubectl apply -f k8s/configmap.yaml  --kubeconfig=\$KUBECONFIG
-                        kubectl apply -f k8s/deployment.yaml --kubeconfig=\$KUBECONFIG
-                        kubectl apply -f k8s/service.yaml    --kubeconfig=\$KUBECONFIG
-                        kubectl apply -f k8s/hpa.yaml        --kubeconfig=\$KUBECONFIG
+                    bat """
+                        kubectl apply -f k8s/configmap.yaml  --kubeconfig=%KUBECONFIG%
+                        kubectl apply -f k8s/deployment.yaml --kubeconfig=%KUBECONFIG%
+                        kubectl apply -f k8s/service.yaml    --kubeconfig=%KUBECONFIG%
+                        kubectl apply -f k8s/hpa.yaml        --kubeconfig=%KUBECONFIG%
                     """
                 }
             }
@@ -64,16 +65,12 @@ pipeline {
                     credentialsId: "${KUBECONFIG_ID}",
                     variable: 'KUBECONFIG'
                 )]) {
-                    sh """
-                        kubectl rollout status deployment/cicdproject \
-                            --timeout=120s \
-                            --kubeconfig=\$KUBECONFIG
-
-                        echo "--- Running Pods ---"
-                        kubectl get pods -l app=cicdproject --kubeconfig=\$KUBECONFIG
-
-                        echo "--- Service Info ---"
-                        kubectl get svc cicdproject-service --kubeconfig=\$KUBECONFIG
+                    bat """
+                        kubectl rollout status deployment/cicdproject --timeout=120s --kubeconfig=%KUBECONFIG%
+                        echo --- Running Pods ---
+                        kubectl get pods -l app=cicdproject --kubeconfig=%KUBECONFIG%
+                        echo --- Service ---
+                        kubectl get svc cicdproject-service  --kubeconfig=%KUBECONFIG%
                     """
                 }
             }
