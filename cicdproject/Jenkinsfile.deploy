@@ -1,0 +1,87 @@
+// ============================================================
+//  JOB 3: deploy
+//  - Receives IMAGE_TAG as a parameter from the master pipeline
+//  - Updates the image tag in deployment.yaml
+//  - Applies all Kubernetes manifests
+//  - Waits for rollout to complete
+// ============================================================
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: 'latest',
+            description: 'Docker image tag to deploy (passed by master pipeline)'
+        )
+    }
+
+    environment {
+        REGISTRY      = 'youruser'              // <-- change to your Docker Hub username
+        IMAGE_NAME    = 'cicdproject'
+        KUBECONFIG_ID = 'kubeconfig-credentials' // Jenkins credential ID (secret file)
+        FULL_IMAGE    = "${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
+    }
+
+    stages {
+        stage('Unstash K8s Manifests') {
+            steps {
+                echo "Getting workspace with k8s manifests..."
+                unstash 'source-and-jar'
+            }
+        }
+
+        stage('Update Image Tag in Manifest') {
+            steps {
+                echo "Setting image to: ${FULL_IMAGE}"
+                sh """
+                    sed -i 's|image: ${REGISTRY}/${IMAGE_NAME}:.*|image: ${FULL_IMAGE}|g' k8s/deployment.yaml
+                """
+            }
+        }
+
+        stage('Apply to Kubernetes') {
+            steps {
+                echo "Deploying to Kubernetes..."
+                withCredentials([file(
+                    credentialsId: "${KUBECONFIG_ID}",
+                    variable: 'KUBECONFIG'
+                )]) {
+                    sh """
+                        kubectl apply -f k8s/configmap.yaml  --kubeconfig=\$KUBECONFIG
+                        kubectl apply -f k8s/deployment.yaml --kubeconfig=\$KUBECONFIG
+                        kubectl apply -f k8s/service.yaml    --kubeconfig=\$KUBECONFIG
+                        kubectl apply -f k8s/hpa.yaml        --kubeconfig=\$KUBECONFIG
+                    """
+                }
+            }
+        }
+
+        stage('Wait for Rollout') {
+            steps {
+                echo "Waiting for pods to become ready..."
+                withCredentials([file(
+                    credentialsId: "${KUBECONFIG_ID}",
+                    variable: 'KUBECONFIG'
+                )]) {
+                    sh """
+                        kubectl rollout status deployment/cicdproject \
+                            --timeout=120s \
+                            --kubeconfig=\$KUBECONFIG
+
+                        echo "--- Running Pods ---"
+                        kubectl get pods -l app=cicdproject --kubeconfig=\$KUBECONFIG
+
+                        echo "--- Service Info ---"
+                        kubectl get svc cicdproject-service --kubeconfig=\$KUBECONFIG
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "DEPLOY job PASSED — ${FULL_IMAGE} is live!" }
+        failure { echo "DEPLOY job FAILED" }
+    }
+}

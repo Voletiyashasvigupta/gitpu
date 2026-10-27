@@ -1,0 +1,58 @@
+// ============================================================
+//  JOB 1: checkout
+//  - Pulls code from GitHub
+//  - Runs Maven build + unit tests
+//  - Stashes the built JAR for the next job
+// ============================================================
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven-3.9'
+        jdk   'JDK-17'
+    }
+
+    stages {
+        stage('Pull Code') {
+            steps {
+                echo "Pulling source code from GitHub..."
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Voletiyashasvigupta/gitpu.git'
+                    ]]
+                ])
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                echo "Running Maven build and tests..."
+                dir('cicdproject') {
+                    sh 'mvn clean package -B'
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Stash Workspace') {
+            steps {
+                echo "Stashing built workspace for downstream jobs..."
+                dir('cicdproject') {
+                    stash name: 'source-and-jar', includes: '**/*'
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "CHECKOUT job PASSED" }
+        failure { echo "CHECKOUT job FAILED" }
+    }
+}

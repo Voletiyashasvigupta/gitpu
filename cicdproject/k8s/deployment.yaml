@@ -1,0 +1,54 @@
+# ============================================================
+#  Deployment — runs 2 replicas of the Spring Boot app
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicdproject
+  namespace: default
+  labels:
+    app: cicdproject
+spec:
+  replicas: 2                          # run 2 pods for HA
+  selector:
+    matchLabels:
+      app: cicdproject
+  strategy:
+    type: RollingUpdate                # zero-downtime deploys
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: cicdproject
+    spec:
+      containers:
+        - name: cicdproject
+          image: youruser/cicdproject:latest   # Jenkins replaces 'latest' with BUILD_NUMBER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:              # K8s waits until app is ready
+            httpGet:
+              path: /api/employees
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:               # K8s restarts unhealthy pods
+            httpGet:
+              path: /api/employees
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 15
+

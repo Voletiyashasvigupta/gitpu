@@ -1,0 +1,61 @@
+// ============================================================
+//  JOB 2: imagecreate
+//  - Unstashes the built workspace from 'checkout' job
+//  - Builds Docker image using the Dockerfile
+//  - Pushes image to Docker Hub with build tag + latest
+// ============================================================
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY     = 'youruser'              // <-- change to your Docker Hub username
+        IMAGE_NAME   = 'cicdproject'
+        DOCKER_CREDS = 'dockerhub-credentials' // Jenkins credential ID
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"
+        FULL_IMAGE   = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        LATEST_IMAGE = "${REGISTRY}/${IMAGE_NAME}:latest"
+    }
+
+    stages {
+        stage('Unstash Source') {
+            steps {
+                echo "Restoring workspace from checkout job..."
+                unstash 'source-and-jar'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo "Building Docker image: ${FULL_IMAGE}"
+                sh "docker build -t ${FULL_IMAGE} -t ${LATEST_IMAGE} ."
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                echo "Pushing image to Docker Hub..."
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKER_CREDS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                        echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                        docker push ${FULL_IMAGE}
+                        docker push ${LATEST_IMAGE}
+                        docker logout
+                    """
+                }
+                // Save the image tag so the deploy job can use it
+                writeFile file: 'image_tag.txt', text: "${IMAGE_TAG}"
+                stash name: 'image-tag', includes: 'image_tag.txt'
+            }
+        }
+    }
+
+    post {
+        success { echo "IMAGECREATE job PASSED — image: ${FULL_IMAGE}" }
+        failure { echo "IMAGECREATE job FAILED" }
+        always  { sh "docker image prune -f || true" }
+    }
+}

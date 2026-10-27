@@ -1,90 +1,68 @@
+// ============================================================
+//  MASTER PIPELINE
+//  Orchestrates 3 separate Jenkins jobs in sequence:
+//    1. checkout      → pulls code, builds JAR, stashes workspace
+//    2. imagecreate   → builds Docker image, pushes to Docker Hub
+//    3. deploy        → deploys to Kubernetes
+// ============================================================
 pipeline {
     agent any
 
     environment {
-        // ── Change these to match your setup ──────────────────────────────
-        IMAGE_NAME   = 'cicdproject'
-        IMAGE_TAG    = "${env.BUILD_NUMBER}"          // e.g. 1, 2, 3 …
-        // If pushing to Docker Hub: 'youruser/cicdproject'
-        // If pushing to a private registry: 'registry.example.com/cicdproject'
-        REGISTRY     = 'youruser'                     // ← update this
-        FULL_IMAGE   = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-        DOCKER_CREDS = 'dockerhub-credentials'       // Jenkins credential ID
-    }
-
-    tools {
-        maven 'Maven-3.9'   // must match the name in Jenkins > Global Tool Config
-        jdk   'JDK-17'      // must match the name in Jenkins > Global Tool Config
+        REGISTRY   = 'youruser'     // <-- change to your Docker Hub username
+        IMAGE_NAME = 'cicdproject'
     }
 
     stages {
 
-        // ── 1. Checkout ──────────────────────────────────────────────────
+        // ── STEP 1: Trigger the 'checkout' job ──────────────────────────
         stage('Checkout') {
             steps {
-                checkout scm
+                echo "Triggering job: checkout..."
+                build job: 'checkout',      // must match Jenkins job name exactly
+                      wait: true,           // wait until it finishes before moving on
+                      propagate: true       // if checkout fails, this pipeline fails too
             }
         }
 
-        // ── 2. Build & Unit Test ─────────────────────────────────────────
-        stage('Build & Test') {
+        // ── STEP 2: Trigger the 'imagecreate' job ───────────────────────
+        stage('ImageCreate') {
             steps {
-                sh 'mvn clean verify -B'
-            }
-            post {
-                always {
-                    junit '**/target/surefire-reports/*.xml'
+                echo "Triggering job: imagecreate..."
+                script {
+                    def imageJob = build job: 'imagecreate',
+                                         wait: true,
+                                         propagate: true
+
+                    // Capture the build number from imagecreate job
+                    // so we pass the exact same image tag to deploy
+                    env.DEPLOY_TAG = imageJob.number.toString()
+                    echo "Image built with tag: ${env.DEPLOY_TAG}"
                 }
             }
         }
 
-        // ── 3. Build Docker Image ────────────────────────────────────────
-        stage('Docker Build') {
-            steps {
-                sh "docker build -t ${FULL_IMAGE} ."
-            }
-        }
-
-        // ── 4. Push to Registry ──────────────────────────────────────────
-        stage('Docker Push') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${DOCKER_CREDS}",
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh """
-                        echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                        docker push ${FULL_IMAGE}
-                        docker logout
-                    """
-                }
-            }
-        }
-
-        // ── 5. Deploy (optional – adjust to your environment) ────────────
+        // ── STEP 3: Trigger the 'deploy' job (pass image tag) ───────────
         stage('Deploy') {
             steps {
-                sh """
-                    docker stop ${IMAGE_NAME} || true
-                    docker rm   ${IMAGE_NAME} || true
-                    docker run -d --name ${IMAGE_NAME} -p 8080:8080 ${FULL_IMAGE}
-                """
+                echo "Triggering job: deploy with IMAGE_TAG=${env.DEPLOY_TAG}..."
+                build job: 'deploy',
+                      wait: true,
+                      propagate: true,
+                      parameters: [
+                          string(name: 'IMAGE_TAG', value: "${env.DEPLOY_TAG}")
+                      ]
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline succeeded — image: ${FULL_IMAGE}"
+            echo "Master Pipeline PASSED — all 3 jobs completed successfully!"
+            echo "Live image: ${REGISTRY}/${IMAGE_NAME}:${env.DEPLOY_TAG}"
         }
         failure {
-            echo "❌ Pipeline failed — check the logs above."
-        }
-        always {
-            // Clean up dangling images to save disk space
-            sh 'docker image prune -f || true'
+            echo "Master Pipeline FAILED — check which job failed above."
         }
     }
 }
-
