@@ -9,7 +9,7 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY   = 'youruser'     // <-- change to your Docker Hub username
+        REGISTRY   = 'yashasvivoleti'     // <-- change to your Docker Hub username
         IMAGE_NAME = 'cicdproject'
     }
 
