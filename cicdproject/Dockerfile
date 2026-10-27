@@ -1,8 +1,9 @@
-FROM eclipse-temurin:21-jre
+# Using Microsoft Container Registry to bypass Docker Hub network timeouts
+FROM mcr.microsoft.com/openjdk/jdk:21-ubuntu
 
 WORKDIR /app
 
-# Copy the fat JAR built by the Maven checkout step
+# Copy the pre-built jar from Maven
 COPY target/*.jar app.jar
 
 EXPOSE 8081
